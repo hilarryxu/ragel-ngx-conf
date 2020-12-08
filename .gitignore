@@ -1,2 +1,5 @@
 *.exe
 lexer.c
+parser.h
+parser.c
+parser.out

@@ -38,36 +38,35 @@
 
 %% write data;
 
-ParseContext *ParseConfig(std::string str) {
-  char *p = const_cast<char*>(str.c_str());
-  char *pe = p + str.length();
+ParseContext *ParseConfig(char *cfg_str) {
+  char *p = cfg_str;
+  char *pe = p + strlen(cfg_str);
   char *eof = pe;
   int cs, act;
   char *ts, *te;
 
-  ParseContext *ctx = new ParseContext();
-  if (str.empty()) {
-    ctx->success = false;
+  ParseContext *ctx = parse_context_create();
+  if (cfg_str == NULL) {
+    ctx->success = 0;
     snprintf(ctx->error, 1024, ERR_BAD_CONF_FILE);
     return ctx;
   }
 
-  // Token *tk = NULL;
+  Token *tk = NULL;
 
-  // void *parser = ParseAlloc(malloc);
+  void *parser = ParseAlloc(malloc);
 
   %% write init;
   %% write exec;
 
   if (cs < %%{ write first_final; }%%) {
     snprintf(ctx->error, 1024, "%s(line: %d)", ERR_SYNTAX, ctx->line);
-    ctx->success = false;
-    printf(ctx->error);
+    ctx->success = 0;
   } else {
-    // Parse(parser, 0, 0, ctx);
+    Parse(parser, 0, 0, ctx);
   }
 
-  // ParseFree(parser, free);
+  ParseFree(parser, free);
 
   return ctx;
 }
