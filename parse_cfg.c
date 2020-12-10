@@ -19,6 +19,7 @@
 #define TOKEN_VALUE_TYPE_STRING 3
 
 #define MAX_KEY_LEN 64
+#define MAX_TOKEN_ITEMS 10
 
 struct Token {
   int id;
@@ -32,7 +33,8 @@ struct Token {
 };
 
 struct Value {
-  struct nc_array value_lst;
+  int n;
+  struct Token *tokens[MAX_TOKEN_ITEMS];
 };
 
 struct KeyValue {
@@ -114,8 +116,7 @@ token_create(int id, int value_type, const char *ts, const char *te,
 struct Value *
 value_create(struct ParseContext *ctx)
 {
-  struct Value *value = (struct Value *)nc_palloc(ctx->pool, sizeof(*value));
-  nc_array_init(&value->value_lst, 10, sizeof(struct Token *));
+  struct Value *value = (struct Value *)nc_pcalloc(ctx->pool, sizeof(*value));
 
   return value;
 }
@@ -123,8 +124,7 @@ value_create(struct ParseContext *ctx)
 void
 value_append_token(struct Value *value, struct Token *token)
 {
-  struct Token **tokens = nc_array_push(&value->value_lst);
-  tokens[0] = token;
+  value->tokens[value->n++] = token;
 }
 
 // KeyValue
@@ -139,15 +139,6 @@ keyvalue_create(struct Token *token, struct Value *value,
   return kv;
 }
 
-void
-keyvalue_destroy(struct KeyValue *kv)
-{
-  struct Value *value = kv->value;
-  if (value && value->value_lst.elems) {
-    nc_free(value->value_lst.elems);
-  }
-}
-
 // LogConfig
 struct LogConfig *
 log_config_create()
@@ -160,7 +151,7 @@ void
 log_config_set(struct LogConfig *log_conf, struct KeyValue *kv,
                struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->value_lst.elems;
+  struct Token **tokens = kv->value->tokens;
 
   if (strcmp(kv->key, "level") == 0) {
     log_conf->level = strdup(tokens[0]->i_value.s);
@@ -181,7 +172,7 @@ void
 listen_config_set(struct ListenConfig *conf, struct KeyValue *kv,
                   struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->value_lst.elems;
+  struct Token **tokens = kv->value->tokens;
 
   if (strcmp(kv->key, "socket") == 0) {
     conf->socket = strdup(tokens[0]->i_value.s);
@@ -197,6 +188,8 @@ struct StoreConfig *
 store_config_create()
 {
   struct StoreConfig *conf = (struct StoreConfig *)nc_zalloc(sizeof(*conf));
+  nc_array_init(&conf->stores, 5, sizeof(struct StoreConfig *));
+
   return conf;
 }
 
@@ -204,6 +197,27 @@ void
 store_config_set(struct StoreConfig *conf, struct KeyValue *kv,
                  struct ParseContext *ctx)
 {
+  struct Token **tokens = kv->value->tokens;
+
+  if (strcmp(kv->key, "socket") == 0) {
+    conf->socket = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "host") == 0) {
+    conf->host = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "port") == 0) {
+    conf->port = tokens[0]->i_value.i;
+  } else if (strcmp(kv->key, "path") == 0) {
+    conf->path = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "name") == 0) {
+    conf->name = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "rotate") == 0) {
+    conf->rotate = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "flush") == 0) {
+    conf->flush = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "success") == 0) {
+    conf->success = strdup(tokens[0]->i_value.s);
+  } else if (strcmp(kv->key, "topic") == 0) {
+    conf->topic = strdup(tokens[0]->i_value.s);
+  }
 }
 
 void
@@ -283,6 +297,24 @@ parse_context_create()
 #include "parser.c"
 #include "lexer.c"
 
+void
+print_store(struct StoreConfig *store, int depth)
+{
+  char spaces[64] = {0};
+
+  memset(spaces, ' ', 63);
+  spaces[depth * 2] = '\0';
+
+  printf("%sstore %s:\n", spaces, store->type);
+
+  if (store->stores.nelem > 0) {
+    struct StoreConfig **stores = (struct StoreConfig **)store->stores.elems;
+    for (int i = 0; i < store->stores.nelem; i++) {
+      print_store(stores[i], depth + 1);
+    }
+  }
+}
+
 int
 main(int argc, char *argv[])
 {
@@ -322,6 +354,7 @@ main(int argc, char *argv[])
       printf("  socket: %s\n", conf->listen->socket);
       printf("  port: %d\n", conf->listen->port);
     }
+    print_store(conf->store, 0);
   }
 
   return 0;

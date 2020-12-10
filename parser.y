@@ -59,12 +59,10 @@ keyvalue(A) ::= ID(K) value(V) SEMICOLON. {
 conf(A) ::= keyvalue(B). {
   A = nc_config_create();
   nc_config_set(A, B, ctx);
-  keyvalue_destroy(B);
 }
 conf(A) ::= conf(B) keyvalue(C). {
   A = B;
   nc_config_set(A, C, ctx);
-  keyvalue_destroy(C);
 }
 
 conf(A) ::= log(B). {
@@ -118,12 +116,10 @@ log(A) ::= LOG LP log_conf(B) RP. {
 log_conf(A) ::= keyvalue(B). {
   A = log_config_create();
   log_config_set(A, B, ctx);
-  keyvalue_destroy(B);
 }
 log_conf(A) ::= log_conf(B) keyvalue(C). {
   A = B;
   log_config_set(A, C, ctx);
-  keyvalue_destroy(C);
 }
 
 listen(A) ::= LISTEN LP listen_conf(B) RP. {
@@ -132,12 +128,10 @@ listen(A) ::= LISTEN LP listen_conf(B) RP. {
 listen_conf(A) ::= keyvalue(B). {
   A = listen_config_create();
   listen_config_set(A, B, ctx);
-  keyvalue_destroy(B);
 }
 listen_conf(A) ::= listen_conf(B) keyvalue(C). {
   A = B;
   listen_config_set(A, C, ctx);
-  keyvalue_destroy(C);
 }
 
 store(A) ::= STORE ID(B) buffer_type(C) LP store_conf(D) RP. {
@@ -169,12 +163,10 @@ buffer_type(A) ::= . {
 store_conf(A) ::= keyvalue(B). {
   A = store_config_create();
   store_config_set(A, B, ctx);
-  keyvalue_destroy(B);
 }
 store_conf(A) ::= store_conf(B) keyvalue(C). {
   A = B;
   store_config_set(A, C, ctx);
-  keyvalue_destroy(C);
 }
 store_conf(A) ::= store(B). {
   A = store_config_create();
