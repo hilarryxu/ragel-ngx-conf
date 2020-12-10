@@ -11,7 +11,7 @@
 
 %syntax_error {
   if (TOKEN) {
-    snprintf(ctx->error, 1024, "%s(line: %d): %s", ERR_SYNTAX, ctx->line, (const char *)(TOKEN->value));
+    snprintf(ctx->error, 1024, "%s(line: %d): %d", ERR_SYNTAX, ctx->line, TOKEN->value_type);
   } else {
     snprintf(ctx->error, 1024, "%s(line: %d)", ERR_SYNTAX, ctx->line);
   }
@@ -23,19 +23,18 @@
   ctx->success = 0;
 }
 
-%extra_argument {ParseContext *ctx}
+%extra_argument {struct ParseContext *ctx}
 
-%token_type {Token*}
+%token_type {struct Token*}
 %token_prefix TK_
 
-%type conf {NcConfig*}
-%type log {NcConfig*}
-%type listen {NcConfig*}
-%type keyvalue {KeyValue*}
-%type value {Value*}
-%type log_conf {NcConfig*}
-%type listen_conf {NcConfig*}
-%type buffer_type {Token*}
+%type conf {struct NcConfig*}
+%type log {struct LogConfig*}
+%type listen {struct ListenConfig*}
+%type keyvalue {struct KeyValue*}
+%type value {struct Value*}
+%type log_conf {struct LogConfig*}
+%type listen_conf {struct ListenConfig*}
 
 main ::= conf(A). {
   ctx->conf = A;
@@ -62,5 +61,61 @@ conf(A) ::= keyvalue(B). {
 conf(A) ::= conf(B) keyvalue(C). {
   A = B;
   nc_config_set(A, C, ctx);
+  keyvalue_destroy(C);
+}
+
+conf(A) ::= log(B). {
+  A = nc_config_create();
+  A->log = B;
+}
+conf(A) ::= conf(B) log(C). {
+  A = B;
+  if (A->log != NULL) {
+    snprintf(ctx->error, 1024, ERR_MULTI_LOG);
+    ctx->success = 0;
+  } else {
+    A->log = C;
+  }
+}
+
+conf(A) ::= listen(B). {
+  A = nc_config_create();
+  A->listen = B;
+}
+conf(A) ::= conf(B) listen(C). {
+  A = B;
+  if (A->listen != NULL) {
+    snprintf(ctx->error, 1024, ERR_MULTI_LISTEN);
+    ctx->success = 0;
+  } else {
+    A->listen = C;
+  }
+}
+
+log(A) ::= LOG LP log_conf(B) RP. {
+  A = B;
+}
+log_conf(A) ::= keyvalue(B). {
+  A = log_config_create();
+  log_config_set(A, B, ctx);
+  keyvalue_destroy(B);
+}
+log_conf(A) ::= log_conf(B) keyvalue(C). {
+  A = B;
+  log_config_set(A, C, ctx);
+  keyvalue_destroy(C);
+}
+
+listen(A) ::= LISTEN LP listen_conf(B) RP. {
+  A = B;
+}
+listen_conf(A) ::= keyvalue(B). {
+  A = listen_config_create();
+  listen_config_set(A, B, ctx);
+  keyvalue_destroy(B);
+}
+listen_conf(A) ::= listen_conf(B) keyvalue(C). {
+  A = B;
+  listen_config_set(A, C, ctx);
   keyvalue_destroy(C);
 }

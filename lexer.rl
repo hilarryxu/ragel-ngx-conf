@@ -38,21 +38,23 @@
 
 %% write data;
 
-ParseContext *ParseConfig(char *cfg_str) {
+struct ParseContext *
+ParseConfig(char *cfg_str)
+{
   char *p = cfg_str;
   char *pe = p + strlen(cfg_str);
   char *eof = pe;
   int cs, act;
   char *ts, *te;
 
-  ParseContext *ctx = parse_context_create();
+  struct ParseContext *ctx = parse_context_create();
   if (cfg_str == NULL) {
     ctx->success = 0;
     snprintf(ctx->error, 1024, ERR_BAD_CONF_FILE);
     return ctx;
   }
 
-  Token *tk = NULL;
+  struct Token *tk = NULL;
 
   void *parser = ParseAlloc(malloc);
 

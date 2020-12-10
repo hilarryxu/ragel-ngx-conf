@@ -5,7 +5,7 @@ ifndef verbose
 endif
 
 $(TARGET): parse_cfg.c lexer.c parser.c
-	$(SILENT) $(CC) parse_cfg.c -o $@ -I "../libnc/src" -L "../libnc/builddir" -lnc
+	$(SILENT) $(CC) parse_cfg.c -o $@ -DNDEBUG -I "../libnc/src" -L "../libnc/builddir" -lnc
 
 lexer.c: lexer.rl
 	$(SILENT) ragel $<
