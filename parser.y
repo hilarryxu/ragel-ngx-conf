@@ -66,15 +66,17 @@ conf(A) ::= conf(B) keyvalue(C). {
 
 conf(A) ::= log(B). {
   A = nc_config_create();
-  A->log = B;
+  A->log_level = B->level;
+  A->log_file = B->file;
 }
 conf(A) ::= conf(B) log(C). {
   A = B;
-  if (A->log != NULL) {
+  if (A->log_file != NULL) {
     snprintf(ctx->error, 1024, ERR_MULTI_LOG);
     ctx->success = 0;
   } else {
-    A->log = C;
+    A->log_level = C->level;
+    A->log_file = C->file;
   }
 }
 

@@ -54,9 +54,8 @@ struct ListenConfig {
 };
 
 struct NcConfig {
-  int max_clients;
-  int worker_threads;
-  struct LogConfig *log;
+  char *log_level;
+  char *log_file;
   struct ListenConfig *listen;
 };
 
@@ -262,10 +261,10 @@ main(int argc, char *argv[])
     printf("error: %s\n", ctx->error);
   } else {
     struct NcConfig *conf = ctx->conf;
-    if (conf->log) {
+    if (conf->log_file) {
       printf("log:\n");
-      printf("  level: %s\n", conf->log->level);
-      printf("  file: %s\n", conf->log->file);
+      printf("  level: %s\n", conf->log_level);
+      printf("  file: %s\n", conf->log_file);
     }
     if (conf->listen) {
       printf("listen:\n");
