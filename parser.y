@@ -31,10 +31,13 @@
 %type conf {struct NcConfig*}
 %type log {struct LogConfig*}
 %type listen {struct ListenConfig*}
+%type store {struct StoreConfig*}
 %type keyvalue {struct KeyValue*}
 %type value {struct Value*}
 %type log_conf {struct LogConfig*}
 %type listen_conf {struct ListenConfig*}
+%type store_conf {struct StoreConfig*}
+%type buffer_type {struct Token*}
 
 main ::= conf(A). {
   ctx->conf = A;
@@ -94,6 +97,21 @@ conf(A) ::= conf(B) listen(C). {
   }
 }
 
+conf(A) ::= store(B). {
+  A = nc_config_create();
+  A->store = B;
+}
+conf(A) ::= conf(B) store(C). {
+  A = B;
+  if (A->store != NULL) {
+    snprintf(ctx->error, 1024, ERR_MULTI_STORE);
+    ctx->success = 0;
+    store_config_destroy(C);
+  } else {
+    A->store = C;
+  }
+}
+
 log(A) ::= LOG LP log_conf(B) RP. {
   A = B;
 }
@@ -120,4 +138,49 @@ listen_conf(A) ::= listen_conf(B) keyvalue(C). {
   A = B;
   listen_config_set(A, C, ctx);
   keyvalue_destroy(C);
+}
+
+store(A) ::= STORE ID(B) buffer_type(C) LP store_conf(D) RP. {
+  A = D;
+  A->type = strdup(B->i_value.s);
+  if (C != NULL) {
+    if (A->buffer_type)
+      free(A->buffer_type);
+    A->buffer_type = strdup(C->i_value.s);
+  }
+}
+store(A) ::= STORE ID(B) buffer_type(C) LP RP. {
+  A = store_config_create();
+  A->type = strdup(B->i_value.s);
+  if (C != NULL) {
+    if (A->buffer_type)
+      free(A->buffer_type);
+    A->buffer_type = strdup(C->i_value.s);
+  }
+}
+
+buffer_type(A) ::= BUFFER_TYPE(B). {
+  A = B;
+}
+buffer_type(A) ::= . {
+  A = NULL;
+}
+
+store_conf(A) ::= keyvalue(B). {
+  A = store_config_create();
+  store_config_set(A, B, ctx);
+  keyvalue_destroy(B);
+}
+store_conf(A) ::= store_conf(B) keyvalue(C). {
+  A = B;
+  store_config_set(A, C, ctx);
+  keyvalue_destroy(C);
+}
+store_conf(A) ::= store(B). {
+  A = store_config_create();
+  store_config_append_store(A, B);
+}
+store_conf(A) ::= store_conf(B) store(C). {
+  A = B;
+  store_config_append_store(A, C);
 }

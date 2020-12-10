@@ -11,9 +11,7 @@
 #define ERR_BAD_CONF_FILE "Bad or empty config file"
 #define ERR_MULTI_LOG "Multi log conf"
 #define ERR_MULTI_LISTEN "Multi listen conf"
-
-#define TK_STORE 7
-#define TK_BUFFER_TYPE 8
+#define ERR_MULTI_STORE "Multi store conf"
 
 #define TOKEN_VALUE_TYPE_NONE 0
 #define TOKEN_VALUE_TYPE_INTEGER 1
@@ -53,10 +51,26 @@ struct ListenConfig {
   int port;
 };
 
+struct StoreConfig {
+  char *type;
+  char *buffer_type;
+  char *socket;
+  char *host;
+  int port;
+  char *path;
+  char *name;
+  char *rotate;
+  char *flush;
+  char *success;
+  char *topic;
+  struct nc_array stores;
+};
+
 struct NcConfig {
   char *log_level;
   char *log_file;
   struct ListenConfig *listen;
+  struct StoreConfig *store;
 };
 
 struct ParseContext {
@@ -178,6 +192,32 @@ listen_config_set(struct ListenConfig *conf, struct KeyValue *kv,
   }
 }
 
+// StoreConfig
+struct StoreConfig *
+store_config_create()
+{
+  struct StoreConfig *conf = (struct StoreConfig *)nc_zalloc(sizeof(*conf));
+  return conf;
+}
+
+void
+store_config_set(struct StoreConfig *conf, struct KeyValue *kv,
+                 struct ParseContext *ctx)
+{
+}
+
+void
+store_config_append_store(struct StoreConfig *conf, struct StoreConfig *store)
+{
+  struct StoreConfig **stores = nc_array_push(&conf->stores);
+  stores[0] = store;
+}
+
+void
+store_config_destroy(struct StoreConfig *conf)
+{
+}
+
 // NcConfig
 struct NcConfig *
 nc_config_create()
@@ -254,7 +294,18 @@ main(int argc, char *argv[])
                "listen {\n"
                "  port 3388;\n"
                "  socket /var/run/nc.sock;\n"
+               "}\n"
+               "store buffer {\n"
+               "  store network primary {\n"
+               "    host www.myserver.com;\n"
+               "    port 3388;\n"
+               "  }\n"
+               "  store file secondary {\n"
+               "    path /data/data/kidsbuf;\n"
+               "    rotate 5min;\n"
+               "  }\n"
                "}\n";
+
   struct ParseContext *ctx = ParseConfig(cfg);
 
   if (!ctx->success) {
