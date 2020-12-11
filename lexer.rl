@@ -14,7 +14,7 @@
 
   main := |*
     ('-'|'+')? [1-9][0-9]* { INTEGER() };
-    ('-'|'+')? [0-9]* '.' [0-9]+{ FLOAT() };
+    ('-'|'+')? [0-9]* '.' [0-9]+ { FLOAT() };
 
     /listen/i { KEYWORD(TK_LISTEN) };
     /store/i { KEYWORD(TK_STORE) };
@@ -29,7 +29,7 @@
     '"' (dliteralChar | "'")* '"' { STRING() };
     "'" (dliteralChar | '"')* "'" { STRING() };
 
-    (print - noise - [,<>=;{}])+ { ID() };
+    (print - noise - ['",<>=;{}])+ { ID() };
 
     comment;
     noise;

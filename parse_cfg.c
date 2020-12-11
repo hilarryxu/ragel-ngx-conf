@@ -53,6 +53,26 @@ static struct conf_command store_conf_commands[] = {
 
     null_command};
 
+static void
+unescape_str_inplace(char *s, size_t len)
+{
+  char ch;
+  char *p = s;
+  char *q = s;
+  char *pe = s + len;
+
+  while (p < pe) {
+    ch = *p;
+    if (ch == '\\') {
+      *(q++) = *(p + 1);
+      p += 2;
+    } else {
+      *(q++) = *(p++);
+    }
+  }
+  *q = '\0';
+}
+
 // Token
 struct Token *
 token_create(int id, int value_type, const char *ts, const char *te,
@@ -71,8 +91,10 @@ token_create(int id, int value_type, const char *ts, const char *te,
     tk->i_value.i = atoi(s);
   } else if (value_type == TOKEN_VALUE_TYPE_FLOAT) {
     tk->i_value.d = strtod(s, NULL);
+  } else if (value_type == TOKEN_VALUE_TYPE_STRING) {
+    unescape_str_inplace(s, len);
+    tk->i_value.s = s;
   } else {
-    // FIXME(xcc): handle escaped string
     tk->i_value.s = s;
   }
 
@@ -506,7 +528,7 @@ main(int argc, char *argv[])
 {
   char cfg[] = "ignore_case on;\n"
                "worker_threads 4;\n"
-               "id 'cfg-01';\n"
+               "id 'cfg\\'01\\';\n"
                "log {\n"
                "  level info;\n"
                "  file /var/log/nc.log;\n"
@@ -521,7 +543,7 @@ main(int argc, char *argv[])
                "    port 3388;\n"
                "  }\n"
                "  store file secondary {\n"
-               "    path /data/data/kidsbuf;\n"
+               "    path /data/data/buf;\n"
                "    rotate 5min;\n"
                "  }\n"
                "}\n";
