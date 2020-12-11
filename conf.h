@@ -20,6 +20,9 @@
 #define MAX_VALUE_TOKENS_NR 10
 #define MAX_SUB_STORES_NR 5
 
+#define CONF_OK (void *)NULL
+#define CONF_ERROR (void *)"has an invalid value"
+
 #define CONF_UNSET -1
 #define CONF_UNSET_NUM -1
 #define CONF_UNSET_SDS sdsempty()
@@ -73,6 +76,7 @@ struct StoreConfig {
 };
 
 struct NcConfig {
+  sds id;
   sds log_level;
   sds log_file;
   int max_clients;
@@ -89,5 +93,17 @@ struct ParseContext {
   struct nc_pool *pool;
   char error[MAX_PARSE_CONTEXT_ERROR_LEN + 1];
 };
+
+struct conf_command {
+  char *name;
+  char *(*set)(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+               struct ParseContext *ctx);
+  int offset;
+};
+
+#define null_command                                                           \
+  {                                                                            \
+    NULL, NULL, 0                                                              \
+  }
 
 #endif // T_CONF_H_

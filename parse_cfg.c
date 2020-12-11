@@ -16,6 +16,21 @@
 #define CONF_SET_SDS_SLOT(field, token)                                        \
   field = sdscpylen(field, token->i_value.s, token->len)
 
+char *conf_set_num(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+                   struct ParseContext *ctx);
+char *conf_set_bool(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+                    struct ParseContext *ctx);
+char *conf_set_sds(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+                   struct ParseContext *ctx);
+
+static struct conf_command conf_commands[] = {
+    {"id", conf_set_sds, offsetof(struct NcConfig, id)},
+    {"max_clients", conf_set_num, offsetof(struct NcConfig, max_clients)},
+    {"worker_threads", conf_set_num, offsetof(struct NcConfig, worker_threads)},
+    {"ignore_case", conf_set_bool, offsetof(struct NcConfig, ignore_case)},
+
+    null_command};
+
 // Token
 struct Token *
 token_create(int id, int value_type, const char *ts, const char *te,
@@ -216,11 +231,12 @@ struct NcConfig *
 nc_config_create()
 {
   struct NcConfig *cf = nc_zalloc(sizeof(*cf));
+  cf->id = CONF_UNSET_SDS;
   cf->log_level = CONF_UNSET_SDS;
   cf->log_file = CONF_UNSET_SDS;
-  cf->max_clients = 1000;
-  cf->worker_threads = 4;
-  cf->ignore_case = 0;
+  cf->max_clients = CONF_UNSET_NUM;
+  cf->worker_threads = CONF_UNSET_NUM;
+  cf->ignore_case = CONF_UNSET_NUM;
 
   return cf;
 }
@@ -229,23 +245,28 @@ void
 nc_config_set(struct NcConfig *cf, struct KeyValue *kv,
               struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->tokens;
+  struct conf_command *cmd;
 
-  if (strcmp(kv->key, "max_clients") == 0) {
-    CONF_SET_NUM_SLOT(cf->max_clients, tokens[0]);
-  } else if (strcmp(kv->key, "worker_threads") == 0) {
-    CONF_SET_NUM_SLOT(cf->worker_threads, tokens[0]);
-  } else if (strcmp(kv->key, "ignore_case") == 0) {
-    if (tokens[0]->value_type == TOKEN_VALUE_TYPE_INTEGER) {
-      CONF_SET_NUM_SLOT(cf->ignore_case, tokens[0]);
-    } else {
-      if (strcmp(tokens[0]->i_value.s, "on") == 0) {
-        cf->ignore_case = 1;
-      } else if (strcmp(tokens[0]->i_value.s, "off") == 0) {
-        cf->ignore_case = 0;
-      }
+  for (cmd = conf_commands; cmd->name != NULL; cmd++) {
+    char *rv;
+
+    if (strcmp(kv->key, cmd->name) != 0) {
+      continue;
     }
+
+    rv = cmd->set(cf, cmd, kv, ctx);
+    if (rv != CONF_OK) {
+      snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+               "line: %d, conf: directive \"%s\" %s", ctx->line, kv->key, rv);
+      ctx->success = 0;
+    }
+
+    return;
   }
+
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+           "line: %d, conf: directive \"%s\" is unknown", ctx->line, kv->key);
+  ctx->success = 0;
 }
 
 // ParseContext
@@ -254,7 +275,7 @@ parse_context_create()
 {
   struct ParseContext *ctx = nc_zalloc(sizeof(*ctx));
   ctx->success = 1;
-  ctx->line = 1;
+  ctx->line = 0;
   ctx->pool = nc_pool_create(NC_DEFAULT_POOL_SIZE);
 
   return ctx;
@@ -337,11 +358,104 @@ print_store(struct StoreConfig *store, int depth)
   }
 }
 
+char *
+conf_set_num(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+             struct ParseContext *ctx)
+{
+  struct Token *value = kv->value->tokens[0];
+  uint8_t *p;
+  int num, *np;
+
+  p = cf;
+  np = (int *)(p + cmd->offset);
+
+  if (*np != CONF_UNSET_NUM) {
+    return "is a duplicate";
+  }
+
+  if (value->value_type != TOKEN_VALUE_TYPE_INTEGER) {
+    return "is not a number";
+  }
+
+  *np = num;
+
+  return CONF_OK;
+}
+
+char *
+conf_set_bool(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+              struct ParseContext *ctx)
+{
+  struct Token *value = kv->value->tokens[0];
+  uint8_t *p;
+  int *bp;
+
+  p = cf;
+  bp = (int *)(p + cmd->offset);
+
+  if (*bp != CONF_UNSET_NUM) {
+    return "is a duplicate";
+  }
+
+  if (value->value_type == TOKEN_VALUE_TYPE_INTEGER) {
+    if (value->i_value.i == 1) {
+      *bp = 1;
+    } else if (value->i_value.i == 0) {
+      *bp = 0;
+    } else {
+      return "is not 1 or 0";
+    }
+  } else if ((value->value_type == TOKEN_VALUE_TYPE_NONE) ||
+             (value->value_type == TOKEN_VALUE_TYPE_STRING)) {
+    if ((strcmp(value->i_value.s, "true") == 0) ||
+        (strcmp(value->i_value.s, "on") == 0)) {
+      *bp = 0;
+    } else if ((strcmp(value->i_value.s, "false") == 0) ||
+               (strcmp(value->i_value.s, "off") == 0)) {
+      *bp = 1;
+    } else {
+      return "is not true,false,on,off";
+    }
+  } else {
+    return CONF_ERROR;
+  }
+
+  return CONF_OK;
+}
+
+char *
+conf_set_sds(void *cf, struct conf_command *cmd, struct KeyValue *kv,
+             struct ParseContext *ctx)
+{
+  struct Token *value = kv->value->tokens[0];
+  uint8_t *p;
+  sds *sp;
+
+  p = cf;
+  sp = (sds *)(p + cmd->offset);
+
+  if (sdslen(*sp) > 0) {
+    return "is a duplicate";
+  }
+
+  if ((value->value_type == TOKEN_VALUE_TYPE_NONE) ||
+      (value->value_type == TOKEN_VALUE_TYPE_STRING)) {
+    *sp = sdscpylen(*sp, value->i_value.s, value->len);
+  } else {
+    return "is not a string";
+  }
+
+  return CONF_OK;
+}
+
+// FIXME(xcc): nc_config_check
+
 int
 main(int argc, char *argv[])
 {
   char cfg[] = "ignore_case on;\n"
                "worker_threads 1;\n"
+               "id 'cfg-01';\n"
                "log {\n"
                "  level info;\n"
                "  file /var/log/nc.log;\n"
@@ -364,9 +478,10 @@ main(int argc, char *argv[])
   struct ParseContext *ctx = ParseConfig(cfg);
 
   if (!ctx->success) {
-    printf("error: %s\n", ctx->error);
+    printf("ERR: %s\n", ctx->error);
   } else {
     struct NcConfig *conf = ctx->conf;
+    printf("id: %s\n", conf->id);
     printf("max_clients: %d\n", conf->max_clients);
     printf("worker_threads: %d\n", conf->worker_threads);
     printf("ignore_case: %d\n", conf->ignore_case);
