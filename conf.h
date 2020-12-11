@@ -75,6 +75,9 @@ struct StoreConfig {
 struct NcConfig {
   sds log_level;
   sds log_file;
+  int max_clients;
+  int worker_threads;
+  int ignore_case;
   struct ListenConfig *listen;
   struct StoreConfig *store;
 };

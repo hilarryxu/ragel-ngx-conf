@@ -6,20 +6,20 @@
 
 %parse_failure {
   ctx->success = 0;
-  snprintf(ctx->error, 1024, "%s(line: %d)", ERR_SYNTAX, ctx->line);
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, "%s(line: %d)", ERR_SYNTAX, ctx->line);
 }
 
 %syntax_error {
   if (TOKEN) {
-    snprintf(ctx->error, 1024, "%s(line: %d): %d", ERR_SYNTAX, ctx->line, TOKEN->value_type);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, "%s(line: %d): %d", ERR_SYNTAX, ctx->line, TOKEN->value_type);
   } else {
-    snprintf(ctx->error, 1024, "%s(line: %d)", ERR_SYNTAX, ctx->line);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, "%s(line: %d)", ERR_SYNTAX, ctx->line);
   }
   ctx->success = 0;
 }
 
 %stack_overflow {
-  snprintf(ctx->error, 1024, "parse config file stack overflow(%d)", ctx->line);
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, "parse config file stack overflow(%d)", ctx->line);
   ctx->success = 0;
 }
 
@@ -67,20 +67,20 @@ conf(A) ::= conf(B) keyvalue(C). {
 
 conf(A) ::= log(B). {
   A = nc_config_create();
-  CONF_COPY_SDS(A->log_level, B->level);
-  CONF_COPY_SDS(A->log_file, B->file);
+  CONF_ASSIGN_SDS(A->log_level, B->level);
+  CONF_ASSIGN_SDS(A->log_file, B->file);
+  log_config_destroy(B);
 }
 conf(A) ::= conf(B) log(C). {
   A = B;
   if (sdslen(A->log_level) > 0) {
-    snprintf(ctx->error, 1024, ERR_MULTI_LOG);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, ERR_MULTI_LOG);
     ctx->success = 0;
-    log_config_destroy(C);
   } else {
-    CONF_COPY_SDS(A->log_level, C->level);
-    CONF_COPY_SDS(A->log_file, C->file);
-    log_config_destroy(C);
+    CONF_ASSIGN_SDS(A->log_level, C->level);
+    CONF_ASSIGN_SDS(A->log_file, C->file);
   }
+  log_config_destroy(C);
 }
 
 conf(A) ::= listen(B). {
@@ -90,8 +90,9 @@ conf(A) ::= listen(B). {
 conf(A) ::= conf(B) listen(C). {
   A = B;
   if (A->listen != NULL) {
-    snprintf(ctx->error, 1024, ERR_MULTI_LISTEN);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, ERR_MULTI_LISTEN);
     ctx->success = 0;
+    listen_config_destroy(C);
   } else {
     A->listen = C;
   }
@@ -104,7 +105,7 @@ conf(A) ::= store(B). {
 conf(A) ::= conf(B) store(C). {
   A = B;
   if (A->store != NULL) {
-    snprintf(ctx->error, 1024, ERR_MULTI_STORE);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, ERR_MULTI_STORE);
     ctx->success = 0;
     store_config_destroy(C);
   } else {
@@ -138,16 +139,16 @@ listen_conf(A) ::= listen_conf(B) keyvalue(C). {
 
 store(A) ::= STORE ID(B) buffer_type(C) LP store_conf(D) RP. {
   A = D;
-  A->type = sdscpylen(A->type, B->i_value.s, B->len);
+  CONF_ASSIGN_SDS_FROM_TOKEN(A->type, B);
   if (C != NULL) {
-    A->buffer_type = sdscpylen(A->buffer_type, C->i_value.s, C->len);
+    CONF_ASSIGN_SDS_FROM_TOKEN(A->buffer_type, C);
   }
 }
 store(A) ::= STORE ID(B) buffer_type(C) LP RP. {
   A = store_config_create();
-  A->type = sdscpylen(A->type, B->i_value.s, B->len);
+  CONF_ASSIGN_SDS_FROM_TOKEN(A->type, B);
   if (C != NULL) {
-    A->buffer_type = sdscpylen(A->buffer_type, C->i_value.s, C->len);
+    CONF_ASSIGN_SDS_FROM_TOKEN(A->buffer_type, C);
   }
 }
 

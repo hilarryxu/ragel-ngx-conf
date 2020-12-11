@@ -50,7 +50,7 @@ ParseConfig(char *cfg_str)
   struct ParseContext *ctx = parse_context_create();
   if (cfg_str == NULL) {
     ctx->success = 0;
-    snprintf(ctx->error, 1024, ERR_BAD_CONF_FILE);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, ERR_BAD_CONF_FILE);
     return ctx;
   }
 
@@ -62,13 +62,16 @@ ParseConfig(char *cfg_str)
   %% write exec;
 
   if (cs < %%{ write first_final; }%%) {
-    snprintf(ctx->error, 1024, "%s(line: %d)", ERR_SYNTAX, ctx->line);
+    snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN, "%s(line: %d)", ERR_SYNTAX, ctx->line);
     ctx->success = 0;
   } else {
     Parse(parser, 0, 0, ctx);
   }
 
   ParseFree(parser, free);
+
+  nc_pool_destroy(ctx->pool);
+  ctx->pool = NULL;
 
   return ctx;
 }
