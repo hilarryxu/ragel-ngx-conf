@@ -70,6 +70,9 @@ ParseConfig(char *cfg_str)
 
   ParseFree(parser, free);
 
+  if (ctx->success) {
+    nc_config_check(ctx->conf, ctx);
+  }
   nc_pool_destroy(ctx->pool);
   ctx->pool = NULL;
 

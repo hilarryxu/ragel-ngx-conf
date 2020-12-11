@@ -342,6 +342,14 @@ nc_config_set(struct NcConfig *cf, struct KeyValue *kv,
   ctx->success = 0;
 }
 
+void
+nc_config_check(struct NcConfig *cf, struct ParseContext *ctx)
+{
+  if (cf->max_clients == CONF_UNSET_NUM) {
+    cf->max_clients = 1000;
+  }
+}
+
 // ParseContext
 struct ParseContext *
 parse_context_create()
@@ -521,14 +529,12 @@ conf_set_sds(void *cf, struct conf_command *cmd, struct KeyValue *kv,
   return CONF_OK;
 }
 
-// FIXME(xcc): nc_config_check
-
 int
 main(int argc, char *argv[])
 {
   char cfg[] = "ignore_case on;\n"
                "worker_threads 4;\n"
-               "id 'cfg\\'01\\';\n"
+               "id 'cfg\\'01';\n"
                "log {\n"
                "  level info;\n"
                "  file /var/log/nc.log;\n"
