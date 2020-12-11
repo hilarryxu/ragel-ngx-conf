@@ -67,17 +67,19 @@ conf(A) ::= conf(B) keyvalue(C). {
 
 conf(A) ::= log(B). {
   A = nc_config_create();
-  A->log_level = B->level;
-  A->log_file = B->file;
+  CONF_COPY_SDS(A->log_level, B->level);
+  CONF_COPY_SDS(A->log_file, B->file);
 }
 conf(A) ::= conf(B) log(C). {
   A = B;
-  if (A->log_file != NULL) {
+  if (sdslen(A->log_level) > 0) {
     snprintf(ctx->error, 1024, ERR_MULTI_LOG);
     ctx->success = 0;
+    log_config_destroy(C);
   } else {
-    A->log_level = C->level;
-    A->log_file = C->file;
+    CONF_COPY_SDS(A->log_level, C->level);
+    CONF_COPY_SDS(A->log_file, C->file);
+    log_config_destroy(C);
   }
 }
 
@@ -136,20 +138,16 @@ listen_conf(A) ::= listen_conf(B) keyvalue(C). {
 
 store(A) ::= STORE ID(B) buffer_type(C) LP store_conf(D) RP. {
   A = D;
-  A->type = strdup(B->i_value.s);
+  A->type = sdscpylen(A->type, B->i_value.s, B->len);
   if (C != NULL) {
-    if (A->buffer_type)
-      free(A->buffer_type);
-    A->buffer_type = strdup(C->i_value.s);
+    A->buffer_type = sdscpylen(A->buffer_type, C->i_value.s, C->len);
   }
 }
 store(A) ::= STORE ID(B) buffer_type(C) LP RP. {
   A = store_config_create();
-  A->type = strdup(B->i_value.s);
+  A->type = sdscpylen(A->type, B->i_value.s, B->len);
   if (C != NULL) {
-    if (A->buffer_type)
-      free(A->buffer_type);
-    A->buffer_type = strdup(C->i_value.s);
+    A->buffer_type = sdscpylen(A->buffer_type, C->i_value.s, C->len);
   }
 }
 

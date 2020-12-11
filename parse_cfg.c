@@ -1,87 +1,18 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <assert.h>
 
 #include "parser.h"
+#include "conf.h"
 
 #include "nc_palloc.h"
-#include "nc_array.h"
 
-#define ERR_SYNTAX "Syntax error"
-#define ERR_BAD_CONF_FILE "Bad or empty config file"
-#define ERR_MULTI_LOG "Multi log conf"
-#define ERR_MULTI_LISTEN "Multi listen conf"
-#define ERR_MULTI_STORE "Multi store conf"
+#define CONF_COPY_SDS(to, from) to = sdscpylen(to, from, sdslen(from))
 
-#define TOKEN_VALUE_TYPE_NONE 0
-#define TOKEN_VALUE_TYPE_INTEGER 1
-#define TOKEN_VALUE_TYPE_FLOAT 2
-#define TOKEN_VALUE_TYPE_STRING 3
-
-#define MAX_KEY_LEN 64
-#define MAX_TOKEN_ITEMS 10
-
-struct Token {
-  int id;
-  int value_type;
-  size_t len;
-  union {
-    int i;
-    double d;
-    char *s;
-  } i_value;
-};
-
-struct Value {
-  int n;
-  struct Token *tokens[MAX_TOKEN_ITEMS];
-};
-
-struct KeyValue {
-  char key[MAX_KEY_LEN];
-  struct Value *value;
-};
-
-struct LogConfig {
-  char *level;
-  char *file;
-};
-
-struct ListenConfig {
-  char *socket;
-  char *host;
-  int port;
-};
-
-struct StoreConfig {
-  char *type;
-  char *buffer_type;
-  char *socket;
-  char *host;
-  int port;
-  char *path;
-  char *name;
-  char *rotate;
-  char *flush;
-  char *success;
-  char *topic;
-  struct nc_array stores;
-};
-
-struct NcConfig {
-  char *log_level;
-  char *log_file;
-  struct ListenConfig *listen;
-  struct StoreConfig *store;
-};
-
-struct ParseContext {
-  int line;
-  int success;
-  struct NcConfig *conf;
-  struct nc_pool *pool;
-  char error[1025];
-};
+#define CONF_SET_NUM_SLOT(field, token) field = token->i_value.i
+#define CONF_SET_SDS_SLOT(field, token)                                        \
+  field = sdscpylen(field, token->i_value.s, token->len)
 
 // Token
 struct Token *
@@ -89,22 +20,20 @@ token_create(int id, int value_type, const char *ts, const char *te,
              struct ParseContext *ctx)
 {
   size_t len = te - ts;
-  size_t sz = sizeof(struct Token) + len + 1;
-  struct Token *tk = (struct Token *)nc_palloc(ctx->pool, sz);
-  memset(tk, 0, sz);
-
+  struct Token *tk = (struct Token *)nc_palloc(ctx->pool, sizeof(*tk));
   tk->id = id;
   tk->value_type = value_type;
   tk->len = len;
 
   char *s = nc_pnalloc(ctx->pool, len + 1);
-  memset(s, 0, len + 1);
   memcpy(s, ts, len);
+  s[len] = '\0';
   if (value_type == TOKEN_VALUE_TYPE_INTEGER) {
     tk->i_value.i = atoi(s);
   } else if (value_type == TOKEN_VALUE_TYPE_FLOAT) {
     tk->i_value.d = strtod(s, NULL);
   } else {
+    // FIXME(xcc): handle escaped string
     tk->i_value.s = s;
   }
 
@@ -124,6 +53,7 @@ value_create(struct ParseContext *ctx)
 void
 value_append_token(struct Value *value, struct Token *token)
 {
+  assert(value->n < MAX_VALUE_TOKENS_NR);
   value->tokens[value->n++] = token;
 }
 
@@ -132,8 +62,9 @@ struct KeyValue *
 keyvalue_create(struct Token *token, struct Value *value,
                 struct ParseContext *ctx)
 {
-  struct KeyValue *kv = (struct KeyValue *)nc_pcalloc(ctx->pool, sizeof(*kv));
+  struct KeyValue *kv = (struct KeyValue *)nc_palloc(ctx->pool, sizeof(*kv));
   memcpy(kv->key, token->i_value.s, token->len);
+  kv->key[token->len] = '\0';
   kv->value = value;
 
   return kv;
@@ -143,43 +74,58 @@ keyvalue_create(struct Token *token, struct Value *value,
 struct LogConfig *
 log_config_create()
 {
-  struct LogConfig *log_conf = (struct LogConfig *)nc_zalloc(sizeof(*log_conf));
-  return log_conf;
+  struct LogConfig *cf = (struct LogConfig *)nc_zalloc(sizeof(*cf));
+  cf->level = CONF_UNSET_SDS;
+  cf->file = CONF_UNSET_SDS;
+
+  return cf;
 }
 
 void
-log_config_set(struct LogConfig *log_conf, struct KeyValue *kv,
+log_config_set(struct LogConfig *cf, struct KeyValue *kv,
                struct ParseContext *ctx)
 {
   struct Token **tokens = kv->value->tokens;
 
   if (strcmp(kv->key, "level") == 0) {
-    log_conf->level = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->level, tokens[0]);
   } else if (strcmp(kv->key, "file") == 0) {
-    log_conf->file = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->file, tokens[0]);
   }
+}
+
+void
+log_config_destroy(struct LogConfig *cf)
+{
+  sdsfree(cf->level);
+  sdsfree(cf->file);
+  nc_free(cf);
 }
 
 // ListenConfig
 struct ListenConfig *
 listen_config_create()
 {
-  struct ListenConfig *conf = (struct ListenConfig *)nc_zalloc(sizeof(*conf));
-  return conf;
+  struct ListenConfig *cf = (struct ListenConfig *)nc_alloc(sizeof(*cf));
+  cf->socket = CONF_UNSET_SDS;
+  cf->host = CONF_UNSET_SDS;
+  cf->port = CONF_UNSET_NUM;
+
+  return cf;
 }
 
 void
-listen_config_set(struct ListenConfig *conf, struct KeyValue *kv,
+listen_config_set(struct ListenConfig *cf, struct KeyValue *kv,
                   struct ParseContext *ctx)
 {
   struct Token **tokens = kv->value->tokens;
 
   if (strcmp(kv->key, "socket") == 0) {
-    conf->socket = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->socket, tokens[0]);
   } else if (strcmp(kv->key, "host") == 0) {
-    conf->host = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->host, tokens[0]);
   } else if (strcmp(kv->key, "port") == 0) {
-    conf->port = tokens[0]->i_value.i;
+    CONF_SET_NUM_SLOT(cf->port, tokens[0]);
   }
 }
 
@@ -187,48 +133,47 @@ listen_config_set(struct ListenConfig *conf, struct KeyValue *kv,
 struct StoreConfig *
 store_config_create()
 {
-  struct StoreConfig *conf = (struct StoreConfig *)nc_zalloc(sizeof(*conf));
-  nc_array_init(&conf->stores, 5, sizeof(struct StoreConfig *));
+  struct StoreConfig *cf = (struct StoreConfig *)nc_zalloc(sizeof(*cf));
+  cf->type = CONF_UNSET_SDS;
+  cf->port = CONF_UNSET_NUM;
+  cf->buffer_type = CONF_UNSET_SDS;
+  cf->socket = CONF_UNSET_SDS;
+  cf->host = CONF_UNSET_SDS;
+  cf->path = CONF_UNSET_SDS;
+  cf->name = CONF_UNSET_SDS;
+  cf->rotate = CONF_UNSET_SDS;
+  cf->flush = CONF_UNSET_SDS;
+  cf->success = CONF_UNSET_SDS;
+  cf->topic = CONF_UNSET_SDS;
+  nc_array_init(&cf->stores, MAX_SUB_STORES_NR, sizeof(struct StoreConfig *));
 
-  return conf;
+  return cf;
 }
 
 void
-store_config_set(struct StoreConfig *conf, struct KeyValue *kv,
+store_config_set(struct StoreConfig *cf, struct KeyValue *kv,
                  struct ParseContext *ctx)
 {
   struct Token **tokens = kv->value->tokens;
 
   if (strcmp(kv->key, "socket") == 0) {
-    conf->socket = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->socket, tokens[0]);
   } else if (strcmp(kv->key, "host") == 0) {
-    conf->host = strdup(tokens[0]->i_value.s);
+    CONF_SET_SDS_SLOT(cf->host, tokens[0]);
   } else if (strcmp(kv->key, "port") == 0) {
-    conf->port = tokens[0]->i_value.i;
-  } else if (strcmp(kv->key, "path") == 0) {
-    conf->path = strdup(tokens[0]->i_value.s);
-  } else if (strcmp(kv->key, "name") == 0) {
-    conf->name = strdup(tokens[0]->i_value.s);
-  } else if (strcmp(kv->key, "rotate") == 0) {
-    conf->rotate = strdup(tokens[0]->i_value.s);
-  } else if (strcmp(kv->key, "flush") == 0) {
-    conf->flush = strdup(tokens[0]->i_value.s);
-  } else if (strcmp(kv->key, "success") == 0) {
-    conf->success = strdup(tokens[0]->i_value.s);
-  } else if (strcmp(kv->key, "topic") == 0) {
-    conf->topic = strdup(tokens[0]->i_value.s);
+    CONF_SET_NUM_SLOT(cf->port, tokens[0]);
   }
 }
 
 void
-store_config_append_store(struct StoreConfig *conf, struct StoreConfig *store)
+store_config_append_store(struct StoreConfig *cf, struct StoreConfig *store)
 {
-  struct StoreConfig **stores = nc_array_push(&conf->stores);
-  stores[0] = store;
+  struct StoreConfig **p_store = nc_array_push(&cf->stores);
+  *p_store = store;
 }
 
 void
-store_config_destroy(struct StoreConfig *conf)
+store_config_destroy(struct StoreConfig *cf)
 {
 }
 
@@ -236,13 +181,15 @@ store_config_destroy(struct StoreConfig *conf)
 struct NcConfig *
 nc_config_create()
 {
-  struct NcConfig *conf = nc_zalloc(sizeof(*conf));
+  struct NcConfig *cf = nc_zalloc(sizeof(*cf));
+  cf->log_level = CONF_UNSET_SDS;
+  cf->log_file = CONF_UNSET_SDS;
 
-  return conf;
+  return cf;
 }
 
 void
-nc_config_set(struct NcConfig *conf, struct KeyValue *kv,
+nc_config_set(struct NcConfig *cf, struct KeyValue *kv,
               struct ParseContext *ctx)
 {
 }
