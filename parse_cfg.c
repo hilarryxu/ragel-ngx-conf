@@ -12,10 +12,6 @@
 #define CONF_ASSIGN_SDS_FROM_TOKEN(to, token)                                  \
   to = sdscpylen(to, token->i_value.s, token->len)
 
-#define CONF_SET_NUM_SLOT(field, token) field = token->i_value.i
-#define CONF_SET_SDS_SLOT(field, token)                                        \
-  field = sdscpylen(field, token->i_value.s, token->len)
-
 char *conf_set_num(void *cf, struct conf_command *cmd, struct KeyValue *kv,
                    struct ParseContext *ctx);
 char *conf_set_bool(void *cf, struct conf_command *cmd, struct KeyValue *kv,
@@ -28,6 +24,32 @@ static struct conf_command conf_commands[] = {
     {"max_clients", conf_set_num, offsetof(struct NcConfig, max_clients)},
     {"worker_threads", conf_set_num, offsetof(struct NcConfig, worker_threads)},
     {"ignore_case", conf_set_bool, offsetof(struct NcConfig, ignore_case)},
+
+    null_command};
+
+static struct conf_command log_conf_commands[] = {
+    {"level", conf_set_sds, offsetof(struct LogConfig, level)},
+    {"file", conf_set_sds, offsetof(struct LogConfig, file)},
+
+    null_command};
+
+static struct conf_command listen_conf_commands[] = {
+    {"socket", conf_set_sds, offsetof(struct ListenConfig, socket)},
+    {"host", conf_set_sds, offsetof(struct ListenConfig, host)},
+    {"port", conf_set_num, offsetof(struct ListenConfig, port)},
+
+    null_command};
+
+static struct conf_command store_conf_commands[] = {
+    {"socket", conf_set_sds, offsetof(struct StoreConfig, socket)},
+    {"host", conf_set_sds, offsetof(struct StoreConfig, host)},
+    {"port", conf_set_num, offsetof(struct StoreConfig, port)},
+    {"path", conf_set_sds, offsetof(struct StoreConfig, path)},
+    {"name", conf_set_sds, offsetof(struct StoreConfig, name)},
+    {"rotate", conf_set_sds, offsetof(struct StoreConfig, rotate)},
+    {"flush", conf_set_sds, offsetof(struct StoreConfig, flush)},
+    {"success", conf_set_sds, offsetof(struct StoreConfig, success)},
+    {"topic", conf_set_sds, offsetof(struct StoreConfig, topic)},
 
     null_command};
 
@@ -103,13 +125,28 @@ void
 log_config_set(struct LogConfig *cf, struct KeyValue *kv,
                struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->tokens;
+  struct conf_command *cmd;
 
-  if (strcmp(kv->key, "level") == 0) {
-    CONF_SET_SDS_SLOT(cf->level, tokens[0]);
-  } else if (strcmp(kv->key, "file") == 0) {
-    CONF_SET_SDS_SLOT(cf->file, tokens[0]);
+  for (cmd = log_conf_commands; cmd->name != NULL; cmd++) {
+    char *rv;
+
+    if (strcmp(kv->key, cmd->name) != 0) {
+      continue;
+    }
+
+    rv = cmd->set(cf, cmd, kv, ctx);
+    if (rv != CONF_OK) {
+      snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+               "line: %d, log: directive \"%s\" %s", ctx->line, kv->key, rv);
+      ctx->success = 0;
+    }
+
+    return;
   }
+
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+           "line: %d, log: directive \"%s\" is unknown", ctx->line, kv->key);
+  ctx->success = 0;
 }
 
 void
@@ -136,15 +173,28 @@ void
 listen_config_set(struct ListenConfig *cf, struct KeyValue *kv,
                   struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->tokens;
+  struct conf_command *cmd;
 
-  if (strcmp(kv->key, "socket") == 0) {
-    CONF_SET_SDS_SLOT(cf->socket, tokens[0]);
-  } else if (strcmp(kv->key, "host") == 0) {
-    CONF_SET_SDS_SLOT(cf->host, tokens[0]);
-  } else if (strcmp(kv->key, "port") == 0) {
-    CONF_SET_NUM_SLOT(cf->port, tokens[0]);
+  for (cmd = listen_conf_commands; cmd->name != NULL; cmd++) {
+    char *rv;
+
+    if (strcmp(kv->key, cmd->name) != 0) {
+      continue;
+    }
+
+    rv = cmd->set(cf, cmd, kv, ctx);
+    if (rv != CONF_OK) {
+      snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+               "line: %d, listen: directive \"%s\" %s", ctx->line, kv->key, rv);
+      ctx->success = 0;
+    }
+
+    return;
   }
+
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+           "line: %d, listen: directive \"%s\" is unknown", ctx->line, kv->key);
+  ctx->success = 0;
 }
 
 void
@@ -180,27 +230,28 @@ void
 store_config_set(struct StoreConfig *cf, struct KeyValue *kv,
                  struct ParseContext *ctx)
 {
-  struct Token **tokens = kv->value->tokens;
+  struct conf_command *cmd;
 
-  if (strcmp(kv->key, "socket") == 0) {
-    CONF_SET_SDS_SLOT(cf->socket, tokens[0]);
-  } else if (strcmp(kv->key, "host") == 0) {
-    CONF_SET_SDS_SLOT(cf->host, tokens[0]);
-  } else if (strcmp(kv->key, "port") == 0) {
-    CONF_SET_NUM_SLOT(cf->port, tokens[0]);
-  } else if (strcmp(kv->key, "path") == 0) {
-    CONF_SET_SDS_SLOT(cf->path, tokens[0]);
-  } else if (strcmp(kv->key, "name") == 0) {
-    CONF_SET_SDS_SLOT(cf->name, tokens[0]);
-  } else if (strcmp(kv->key, "rotate") == 0) {
-    CONF_SET_SDS_SLOT(cf->rotate, tokens[0]);
-  } else if (strcmp(kv->key, "flush") == 0) {
-    CONF_SET_SDS_SLOT(cf->flush, tokens[0]);
-  } else if (strcmp(kv->key, "success") == 0) {
-    CONF_SET_SDS_SLOT(cf->success, tokens[0]);
-  } else if (strcmp(kv->key, "topic") == 0) {
-    CONF_SET_SDS_SLOT(cf->topic, tokens[0]);
+  for (cmd = store_conf_commands; cmd->name != NULL; cmd++) {
+    char *rv;
+
+    if (strcmp(kv->key, cmd->name) != 0) {
+      continue;
+    }
+
+    rv = cmd->set(cf, cmd, kv, ctx);
+    if (rv != CONF_OK) {
+      snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+               "line: %d, store: directive \"%s\" %s", ctx->line, kv->key, rv);
+      ctx->success = 0;
+    }
+
+    return;
   }
+
+  snprintf(ctx->error, MAX_PARSE_CONTEXT_ERROR_LEN,
+           "line: %d, store: directive \"%s\" is unknown", ctx->line, kv->key);
+  ctx->success = 0;
 }
 
 void
@@ -364,7 +415,7 @@ conf_set_num(void *cf, struct conf_command *cmd, struct KeyValue *kv,
 {
   struct Token *value = kv->value->tokens[0];
   uint8_t *p;
-  int num, *np;
+  int *np;
 
   p = cf;
   np = (int *)(p + cmd->offset);
@@ -377,7 +428,7 @@ conf_set_num(void *cf, struct conf_command *cmd, struct KeyValue *kv,
     return "is not a number";
   }
 
-  *np = num;
+  *np = value->i_value.i;
 
   return CONF_OK;
 }
@@ -454,7 +505,7 @@ int
 main(int argc, char *argv[])
 {
   char cfg[] = "ignore_case on;\n"
-               "worker_threads 1;\n"
+               "worker_threads 4;\n"
                "id 'cfg-01';\n"
                "log {\n"
                "  level info;\n"
